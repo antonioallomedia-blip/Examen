@@ -1,11 +1,11 @@
 package com.example
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.jsoup.nodes.Element
 
 class HanimeTV : MainAPI() {
 
@@ -17,157 +17,116 @@ class HanimeTV : MainAPI() {
     override var lang = "en"
 
     override val mainPage = mainPageOf(
-        "trending" to "Trending Now"
+        "$mainUrl/browse/trending" to "Trending Now",
+        "$mainUrl/browse/newest" to "Newest"
     )
 
+    // ------------------------------------------------------------------
+    //  HOME PAGE
+    // ------------------------------------------------------------------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val trending = app.get("$mainUrl/api/v8/video?trending=day&page=$page")
-            .parsedSafe<HanimeTrendingResponse>()
-
-        val items = trending?.results?.map { video ->
-            newMovieSearchResponse(video.name, video.slug, TvType.Movie) {
-                this.posterUrl = video.coverUrl
-            }
-        } ?: emptyList()
+        val doc = app.get("${request.data}?page=$page").document
+        val items = doc.select("div.hv-card").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(
             listOf(
                 HomePageList(
-                    name = "Trending Now",
+                    name = request.name,
                     list = items,
                     isHorizontalImages = false
                 )
             ),
-            hasNext = (trending?.nextPage != null)
+            hasNext = items.isNotEmpty()
         )
     }
 
+    // ------------------------------------------------------------------
+    //  SEARCH
+    // ------------------------------------------------------------------
     override suspend fun search(query: String): List<SearchResponse>? {
-        val response = app.get("$mainUrl/api/v8/search?q=${query.trim()}")
-            .parsedSafe<HanimeSearchResponse>()
-
-        return response?.hits?.map { hit ->
-            newMovieSearchResponse(hit.name, hit.slug, TvType.Movie) {
-                this.posterUrl = hit.coverUrl
-            }
-        }
+        val url = "$mainUrl/search?q=${query.trim()}"
+        val doc = app.get(url).document
+        return doc.select("div.hv-card").mapNotNull { it.toSearchResult() }
     }
 
+    // ------------------------------------------------------------------
+    //  LOAD (DETAIL PAGE)
+    // ------------------------------------------------------------------
     override suspend fun load(url: String): LoadResponse? {
-        val response = app.get("$mainUrl/api/v8/video?id=$url")
-            .parsedSafe<HanimeVideoResponse>() ?: return null
-        val video = response.hentaiVideo ?: return null
+        val doc = app.get(url).document
+
+        val title = doc.selectFirst("h1.hv-title")?.text()
+            ?: doc.selectFirst("h1")?.text()
+            ?: return null
+
+        val poster = doc.selectFirst("img.hv-image")?.attr("src")
+            ?: doc.selectFirst("div.hv-cover img")?.attr("src")
+
+        val description = doc.selectFirst("div.hv-description")?.text()
+            ?: doc.selectFirst("div.hv-synopsis")?.text()
+
+        val tags = doc.select("div.hv-tags a").map { it.text() }
 
         return newMovieLoadResponse(
-            name = video.name,
+            name = title,
             url = url,
             type = TvType.Movie,
             dataUrl = url
         ) {
-            this.posterUrl = video.coverUrl
-            this.plot = video.description?.replace(Regex("<[^>]*>"), "")?.trim()
-            this.year = video.releaseDate?.take(4)?.toIntOrNull()
-            this.tags = video.tags?.map { it.text }
+            this.posterUrl = poster
+            this.plot = description
+            this.tags = tags
         }
     }
 
+    // ------------------------------------------------------------------
+    //  LOAD LINKS (VIDEO SOURCES)
+    // ------------------------------------------------------------------
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val response = app.get("$mainUrl/api/v8/video?id=$data")
-            .parsedSafe<HanimeVideoResponse>() ?: return false
+        val doc = app.get(data).document
 
-        val streams = response.videosManifest?.servers
-            ?.flatMap { it.streams ?: emptyList() }
-            ?.filter { it.url.isNotBlank() }
-            ?: return false
+        // Cherche un lecteur embarqué (iframe, script avec .m3u8)
+        val scripts = doc.select("script").map { it.html() }.joinToString("\n")
+        val m3u8Regex = Regex("""https?://[^"']+\.m3u8[^"']*""")
+        val matches = m3u8Regex.findAll(scripts).map { it.value }.toSet()
 
-        streams.forEach { stream ->
-            val qualityLabel = when (stream.height) {
-                1080 -> "1080p"
-                720  -> "720p"
-                480  -> "480p"
-                360  -> "360p"
-                else -> "${stream.height}p"
-            }
+        if (matches.isEmpty()) return false
 
+        matches.forEach { streamUrl ->
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
-                    name = "$name - $qualityLabel",
-                    url = stream.url,
+                    name = this.name,
+                    url = streamUrl,
                     type = ExtractorLinkType.M3U8
                 ) {
-                    this.quality = when (stream.height) {
-                        1080 -> Qualities.P1080.value
-                        720  -> Qualities.P720.value
-                        480  -> Qualities.P480.value
-                        360  -> Qualities.P360.value
-                        else -> Qualities.Unknown.value
-                    }
                     this.referer = mainUrl
+                    this.quality = Qualities.Unknown.value
                 }
             )
         }
-        return streams.isNotEmpty()
+        return true
+    }
+
+    // ------------------------------------------------------------------
+    //  HELPER
+    // ------------------------------------------------------------------
+    private fun Element.toSearchResult(): SearchResponse? {
+        val link = this.selectFirst("a")?.attr("href") ?: return null
+        val title = this.selectFirst("div.hv-card-title")?.text()
+            ?: this.selectFirst("h3")?.text()
+            ?: return null
+        val poster = this.selectFirst("img")?.attr("src")
+
+        val fullUrl = if (link.startsWith("http")) link else "$mainUrl$link"
+
+        return newMovieSearchResponse(title, fullUrl, TvType.Movie) {
+            this.posterUrl = poster
+        }
     }
 }
-
-// ======================================================================
-//  DATA MODELS
-// ======================================================================
-
-data class HanimeTrendingResponse(
-    @JsonProperty("hentai_videos") val results: List<HanimeTrendingItem>? = null,
-    @JsonProperty("next_page")     val nextPage: String? = null
-)
-
-data class HanimeTrendingItem(
-    @JsonProperty("name")       val name: String,
-    @JsonProperty("slug")       val slug: String,
-    @JsonProperty("cover_url")  val coverUrl: String?
-)
-
-data class HanimeSearchResponse(
-    @JsonProperty("hits") val hits: List<HanimeSearchHit>? = null
-)
-
-data class HanimeSearchHit(
-    @JsonProperty("name")       val name: String,
-    @JsonProperty("slug")       val slug: String,
-    @JsonProperty("cover_url")  val coverUrl: String?
-)
-
-data class HanimeVideoResponse(
-    @JsonProperty("hentai_video")    val hentaiVideo: HanimeVideo? = null,
-    @JsonProperty("videos_manifest") val videosManifest: HanimeManifest? = null
-)
-
-data class HanimeVideo(
-    @JsonProperty("name")         val name: String,
-    @JsonProperty("description")  val description: String? = null,
-    @JsonProperty("cover_url")    val coverUrl: String? = null,
-    @JsonProperty("release_date") val releaseDate: String? = null,
-    @JsonProperty("tags")         val tags: List<HanimeTag>? = null
-)
-
-data class HanimeTag(
-    @JsonProperty("text") val text: String
-)
-
-data class HanimeManifest(
-    @JsonProperty("servers") val servers: List<HanimeServer>? = null
-)
-
-data class HanimeServer(
-    @JsonProperty("streams") val streams: List<HanimeStream>? = null
-)
-
-data class HanimeStream(
-    @JsonProperty("url")      val url: String,
-    @JsonProperty("height")   val height: Int,
-    @JsonProperty("size_mbs") val sizeMbs: Double? = null
-)
