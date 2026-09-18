@@ -54,23 +54,10 @@ jobs:
           PLUGIN_FILE=$(ls *.cs3 | head -1)
           PLUGIN_NAME="${PLUGIN_FILE%.cs3}"
 
-          cat > plugins.json <<EOF
-          [
-            {
-              "name": "HanimeTV",
-              "internalName": "${PLUGIN_NAME}",
-              "version": 1,
-              "description": "Hanime.tv provider for CloudStream.",
-              "authors": ["antonioallomedia-blip"],
-              "repositoryUrl": "https://github.com/antonioallomedia-blip/Examen",
-              "status": 1,
-              "tvTypes": ["Movie"],
-              "language": "en",
-              "iconUrl": "https://hanime.tv/favicon.ico",
-              "url": "https://raw.githubusercontent.com/antonioallomedia-blip/Examen/builds/${PLUGIN_FILE}"
-            }
-          ]
-          EOF
+          printf '[\n  {\n    "name": "HanimeTV",\n    "internalName": "%s",\n    "version": 1,\n    "description": "Hanime.tv provider for CloudStream.",\n    "authors": ["antonioallomedia-blip"],\n    "repositoryUrl": "https://github.com/antonioallomedia-blip/Examen",\n    "status": 1,\n    "tvTypes": ["Movie"],\n    "language": "en",\n    "iconUrl": "https://hanime.tv/favicon.ico",\n    "url": "https://raw.githubusercontent.com/antonioallomedia-blip/Examen/builds/%s"\n  }\n]\n' "$PLUGIN_NAME" "$PLUGIN_FILE" > plugins.json
+
+          echo "=== plugins.json content ==="
+          cat plugins.json
 
       - name: Push builds
         run: |
