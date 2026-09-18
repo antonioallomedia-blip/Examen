@@ -1,0 +1,8 @@
+{
+    "name": "HanimeTV Repo",
+    "description": "Hanime.tv plugin for CloudStream",
+    "manifestVersion": 1,
+    "pluginLists": [
+        "https://raw.githubusercontent.com/antonioallomedia-blip/Examen/builds/plugins.json"
+    ]
+}
