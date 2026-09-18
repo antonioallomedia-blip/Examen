@@ -1,0 +1,15 @@
+[
+  {
+    "name": "HanimeTV",
+    "internalName": "ExampleProvider",
+    "version": 1,
+    "description": "Hanime.tv provider for CloudStream.",
+    "authors": ["antonioallomedia-blip"],
+    "repositoryUrl": "https://github.com/antonioallomedia-blip/Examen",
+    "status": 1,
+    "tvTypes": ["Movie"],
+    "language": "en",
+    "iconUrl": "https://hanime.tv/favicon.ico",
+    "url": "https://raw.githubusercontent.com/antonioallomedia-blip/Examen/builds/ExampleProvider.cs3"
+  }
+]
