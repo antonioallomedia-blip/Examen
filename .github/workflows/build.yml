@@ -45,15 +45,32 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
-          ./gradlew make makePluginsJson --stacktrace
+          ./gradlew make --stacktrace
 
           mkdir -p $GITHUB_WORKSPACE/builds
           find . -name "*.cs3" -exec cp {} $GITHUB_WORKSPACE/builds/ \;
-          cp $GITHUB_WORKSPACE/src/plugins.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
 
-          if [ ! -f $GITHUB_WORKSPACE/builds/plugins.json ]; then
-            echo "[]" > $GITHUB_WORKSPACE/builds/plugins.json
-          fi
+          cd $GITHUB_WORKSPACE/builds
+          PLUGIN_FILE=$(ls *.cs3 | head -1)
+          PLUGIN_NAME="${PLUGIN_FILE%.cs3}"
+
+          cat > plugins.json <<EOF
+          [
+            {
+              "name": "HanimeTV",
+              "internalName": "${PLUGIN_NAME}",
+              "version": 1,
+              "description": "Hanime.tv provider for CloudStream.",
+              "authors": ["antonioallomedia-blip"],
+              "repositoryUrl": "https://github.com/antonioallomedia-blip/Examen",
+              "status": 1,
+              "tvTypes": ["Movie"],
+              "language": "en",
+              "iconUrl": "https://hanime.tv/favicon.ico",
+              "url": "https://raw.githubusercontent.com/antonioallomedia-blip/Examen/builds/${PLUGIN_FILE}"
+            }
+          ]
+          EOF
 
       - name: Push builds
         run: |
